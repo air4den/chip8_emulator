@@ -1,6 +1,6 @@
 CXX = g++
 CXXFLAGS = -std=c++11 -Wall -Wextra
-SFML_LIBS = -lsfml-graphics -lsfml-window -lsfml-system
+SFML_LIBS = -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio
 
 # Target executable
 TARGET = chip8
@@ -10,6 +10,9 @@ SOURCES = main.cpp interpreter.cpp peripheral.cpp
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
+
+# Default ROM path
+ROM ?= ./roms/tests/ibm_logo.ch8
 
 # Default target
 all: $(TARGET)
@@ -26,18 +29,9 @@ $(TARGET): $(OBJECTS)
 clean:
 	rm -f $(OBJECTS) $(TARGET)
 
-# Run the emulator
+# Run the emulator with ROM path
 run: $(TARGET)
-	./$(TARGET)
-
-# Install SFML (macOS with Homebrew)
-install-sfml:
-	brew install sfml
-
-# Install SFML (Ubuntu/Debian)
-install-sfml-ubuntu:
-	sudo apt-get update
-	sudo apt-get install libsfml-dev
+	./$(TARGET) $(ROM)
 
 .PHONY: all clean run install-sfml install-sfml-ubuntu
 

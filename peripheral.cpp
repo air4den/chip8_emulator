@@ -2,7 +2,7 @@
 
 class Peripheral {
     private:
-        int width;
-        int height;
-        int px_width;
+        // int width;
+        // int height;
+        // int px_width;
 };

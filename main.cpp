@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdint>
+#include <random>
 #include <algorithm>
 #include <cstring>
 #include <SFML/Graphics.hpp>
@@ -15,9 +16,9 @@ uint16_t pc = ROMBASE;          // PC
 uint16_t i_reg;                 // Index Register
 uint16_t stack[SZ_STACK];       // 16 stack entries
 uint8_t sp = SZ_STACK;
-uint8_t v_regs[0xF] = {};        // General Purpose Registers V0-VF
+uint8_t v_regs[16] = {};        // General Purpose Registers V0-VF
 
-bool incrementIFX55FX65 = false;
+bool ogCOSMACVIP = false;
 
 uint8_t delay_timer = 0;        // 60 Hz Delay Timer
 uint8_t sound_timer = 0;        // Sound Timer
@@ -26,6 +27,36 @@ uint8_t sound_timer = 0;        // Sound Timer
 sf::SoundBuffer beepBuffer;
 sf::Sound beepSound;
 bool soundInitialized = false;
+
+// Rand
+std::random_device rd;  // a seed source for the random number engine
+std::mt19937 gen(rd());
+
+// CHIP-8 key state array
+bool keys[16] = {};
+bool keys_released[16] = {};
+
+int sfmlKeyMap(sf::Keyboard::Key key) {
+    switch (key) {
+        case sf::Keyboard::Num1: return 0x1;
+        case sf::Keyboard::Num2: return 0x2;
+        case sf::Keyboard::Num3: return 0x3;
+        case sf::Keyboard::Num4: return 0xC;
+        case sf::Keyboard::Q:    return 0x4;
+        case sf::Keyboard::W:    return 0x5;
+        case sf::Keyboard::E:    return 0x6;
+        case sf::Keyboard::R:    return 0xD;
+        case sf::Keyboard::A:    return 0x7;
+        case sf::Keyboard::S:    return 0x8;
+        case sf::Keyboard::D:    return 0x9;
+        case sf::Keyboard::F:    return 0xE;
+        case sf::Keyboard::Z:    return 0xA;
+        case sf::Keyboard::X:    return 0x0;
+        case sf::Keyboard::C:    return 0xB;
+        case sf::Keyboard::V:    return 0xF;
+        default: return -1;
+    }
+}
 
 const uint8_t font[80] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -155,9 +186,9 @@ void decode_exe(uint16_t instr) {
         case 0x1:   // JUMP
             pc = NNN(instr);
             break;
-        case 0x2:   // Subroutine at NNN
-            push(pc);
-            pc = NNN(instr);
+        case 0x2:   // Call subroutine at NNN
+            push(pc);           // push PC to stack
+            pc = NNN(instr);    // set PC to NNN
             break;
         case 0x3:
             // 3XNN skips 1 instr if VX value == NN
@@ -194,11 +225,52 @@ void decode_exe(uint16_t instr) {
                 case 0x3:
                     v_regs[X(instr)] = v_regs[X(instr)] ^ v_regs[Y(instr)];
                     break;
-                case 0x4:
+                case 0x4: {
                     uint16_t sum = v_regs[X(instr)] + v_regs[Y(instr)];
                     v_regs[X(instr)] = sum & 0xFF;
                     v_regs[0xF] = (sum > 0xFF) ? 1 : 0;  // Set carry flag on overflow
                     break;
+                }
+                case 0x5: {  // 8XY5: VX = VX - VY
+                    uint8_t old_vx = v_regs[X(instr)];
+                    uint8_t old_vy = v_regs[Y(instr)];
+                    v_regs[X(instr)] = old_vx - old_vy;
+                    v_regs[0xF] = (old_vx >= old_vy) ? 1 : 0;   // set VF to 0 if underflow
+                    break;
+                }
+                case 0x6: {
+                    if (ogCOSMACVIP) {    // COSMAC VIP
+                        v_regs[X(instr)] = v_regs[Y(instr)];
+                        uint8_t oldVX = v_regs[X(instr)];
+                        v_regs[X(instr)] = v_regs[X(instr)] >> 1;
+                        v_regs[0xF] = oldVX & 0x1;
+                    } else {    // CHIP48 / SUPERCHIP
+                        uint8_t oldVX = v_regs[X(instr)];
+                        v_regs[X(instr)] = v_regs[X(instr)] >> 1;
+                        v_regs[0xF] = oldVX & 0x1;
+                    }
+                    break;
+                }
+                case 0x7: {  // 8XY7: VX = VY - VX
+                    uint8_t old_vx = v_regs[X(instr)];
+                    uint8_t old_vy = v_regs[Y(instr)];
+                    v_regs[X(instr)] = old_vy - old_vx;
+                    v_regs[0xF] = (old_vy >= old_vx) ? 1 : 0;
+                    break;
+                }
+                case 0xE: {
+                    if (ogCOSMACVIP) {    // COSMAC VIP
+                        v_regs[X(instr)] = v_regs[Y(instr)];
+                        uint8_t oldVX = v_regs[X(instr)];
+                        v_regs[X(instr)] = v_regs[X(instr)] << 1;
+                        v_regs[0xF] = (oldVX & 0x80) >> 7;  // Get most significant bit before shift
+                    } else {    // CHIP48 / SUPERCHIP
+                        uint8_t oldVX = v_regs[X(instr)];
+                        v_regs[X(instr)] = v_regs[X(instr)] << 1;
+                        v_regs[0xF] = (oldVX & 0x80) >> 7;  // Get most significant bit before shift
+                    }
+                    break;
+                }
             }
             break;
         }
@@ -206,10 +278,25 @@ void decode_exe(uint16_t instr) {
             if(v_regs[X(instr)] != v_regs[Y(instr)])   
                 pc += 2;
             break;
-        case 0xA:
+        case 0xA:   // set index
             i_reg = NNN(instr);
             break;
-        case 0xD:
+        case 0xB:   // jump w/ offset
+            if (ogCOSMACVIP) {
+                // Original COSMAC VIP: BNNN jumps to NNN + V0
+                pc = NNN(instr) + v_regs[0];
+            } else {
+                pc = NNN(instr) + v_regs[X(instr)];
+            }
+            break;
+        case 0xC:   // CXNN: Random
+            {
+                // Generate random number 0-255, then AND with NN
+                std::uniform_int_distribution<> distrib(0, 0xFF);
+                v_regs[X(instr)] = distrib(gen) & NN(instr);
+            }
+            break;
+        case 0xD: {
             uint16_t x_coord = v_regs[X(instr)] % 64;
             uint16_t y_coord = v_regs[Y(instr)] % 32;
             v_regs[0xF] = 0;
@@ -231,18 +318,49 @@ void decode_exe(uint16_t instr) {
                 y_coord++;
             }
             break;
+        }
+        case 0xE: {
+            switch (NN(instr)) {
+                case 0x9E:  // Skip if VX key is pressed
+                    if (keys[v_regs[X(instr)]]) {
+                        pc += 2;
+                    }
+                    break;
+                case 0xA1:  // Skip if VX key is not pressed
+                    if (!keys[v_regs[X(instr)]]) {
+                        pc += 2;
+                    }
+                    break;
+            }
+            break;
+        }
         case 0xF: {
             switch (NN(instr)) {
                 case 0x07:  // FX07: Set VX to the value of the delay timer
                     v_regs[X(instr)] = delay_timer;
                     break;
+                case 0x0A:  // FX0A: Wait for key release, store in VX
+                {
+                    bool keyReleased = false;
+                    for (int i = 0; i < 16; ++i) {
+                        if (keys_released[i]) {
+                            v_regs[X(instr)] = i;
+                            keyReleased = true;
+                            break;
+                        }
+                    }
+                    if (!keyReleased) {
+                        pc -= 2; // Block: re-execute this instruction
+                    }
+                    break;
+                }
                 case 0x15:  // FX15: Set the delay timer to the value of VX
                     delay_timer = v_regs[X(instr)];
                     break;
                 case 0x18:  // FX18: Set the sound timer to the value of VX
                     sound_timer = v_regs[X(instr)];
                     break;
-                case 0x1E:  // FX1E: Add VX to I
+                case 0x1E: {  // FX1E: Add VX to I
                     uint16_t old_i = i_reg;
                     i_reg += v_regs[X(instr)];
                     // Check for overflow beyond 0xFFF
@@ -252,38 +370,43 @@ void decode_exe(uint16_t instr) {
                         v_regs[0xF] = 0;  // Clear flag
                     }
                     break;
-                case 0x29:  // FX29: Set I to the location of the sprite for digit VX
+                }
+                case 0x29: {  // FX29: Set I to the location of the sprite for digit VX
                     i_reg = FONTBASE + ((v_regs[X(instr)] & 0x0F) * 5);
                     break;
-                case 0x33:  // FX33: Store BCD representation of VX
+                }
+                case 0x33: {  // FX33: Store BCD representation of VX
                     uint8_t val = v_regs[X(instr)];
                     ram[i_reg] = val / 100;
                     ram[i_reg + 1] = (val / 10) % 10;
                     ram[i_reg + 2] = val % 10;
                     break;
-                case 0x55:  // FX55: Store V0 to VX in memory starting at address I
+                }
+                case 0x55: {  // FX55: Store V0 to VX in memory starting at address I
                     for (int i = 0; i <= X(instr); i++) {
                         ram[i_reg + i] = v_regs[i];
                     }
-                    if (incrementIFX55FX65) {
+                    if (ogCOSMACVIP) {
                         i_reg += X(instr) + 1;  // Original COSMAC VIP behavior
                     }
                     break;
-                case 0x65:  // FX65: Fill V0 to VX with values from memory starting at address I
+                }
+                case 0x65: {  // FX65: Fill V0 to VX with values from memory starting at address I
                     for (int i = 0; i <= X(instr); i++) {
                         v_regs[i] = ram[i_reg + i];
                     }
-                    if (incrementIFX55FX65) {
+                    if (ogCOSMACVIP) {
                         i_reg += X(instr) + 1;  // Original COSMAC VIP behavior
                     }
                     break;
+                }
             }
             break;
         }
     }   
 }
 
-float instrPerSecond = 10.f;
+float instrPerSecond = 700.f;
 float cycleInterval = 1.f / instrPerSecond;
 float cpuAccumulator = 0.f;
 sf::Clock cpu_clk;
@@ -298,7 +421,7 @@ int main(int argc, char* argv[]) {
     // Parse command line args
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--legacy") == 0 || strcmp(argv[i], "-l") == 0) {
-            incrementIFX55FX65 = true;
+            ogCOSMACVIP = true;
             std::cout << "Using legacy COSMAC VIP behavior for FX55/FX65" << std::endl;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             std::cout << "Usage: " << argv[0] << " [options] [rom_path]" << std::endl;
@@ -316,6 +439,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Failed init. Terminating program.";
         return -1;
     }
+    std::cout << "Starting CHIP-8 Emulator" << std::endl;
+    std::cout << "ROM: " << romPath << std::endl;
+    std::cout << "CPU Speed: " << instrPerSecond << " instructions per second" << std::endl;
 
     sf::RenderWindow window(sf::VideoMode(64*SZ_PIXEL,32*SZ_PIXEL), "Chip8 Emulator");
     window.setFramerateLimit(60);
@@ -324,10 +450,27 @@ int main(int argc, char* argv[]) {
     timer_clk.restart();
 
     while(window.isOpen()) {
+        for (int i = 0; i < 16; i++) {
+            keys_released[i] = false;
+        }
+        
         sf::Event event;
         while (window.pollEvent(event)) {
             if (event.type==sf::Event::Closed) 
                 window.close();
+            if (event.type == sf::Event::KeyPressed) {
+                int k = sfmlKeyMap(event.key.code);
+                if (k != -1) {
+                    keys[k] = true;
+                }
+            }
+            if (event.type == sf::Event::KeyReleased) {
+                int k = sfmlKeyMap(event.key.code);
+                if (k != -1) {
+                    keys[k] = false;
+                    keys_released[k] = true;
+                }
+            }
         }
 
         float cpu_dt = cpu_clk.restart().asSeconds();
