@@ -17,7 +17,7 @@ My C++ implementation of a CHIP-8 emulator using SFML for graphics, audio, and i
 
 ## Dependencies
 
-- **SFML 2.5+** (Graphics, Window, System, Audio modules)
+- **SFML**
 - **C++11 compatible compiler** (GCC, Clang, MSVC)
 
 ### Installing SFML
@@ -42,7 +42,7 @@ vcpkg install sfml
 ## Building
 
 ```bash
-# Build the emulator
+# Build the executable
 make
 
 # Clean build files
@@ -58,13 +58,15 @@ make clean
 make run
 
 # Run with specific ROM
-make run ROM=./roms/tests/ibm_logo.ch8
+make run ROM=<rom_path>
 
 # Run with legacy COSMAC VIP behavior
-make run ROM=./roms/tetris.ch8 LEGACY=--legacy
+make run ROM=<rom_path> LEGACY=--legacy
+```
 
-# Show help
-./chip8 --help
+```bash
+# Run Executable
+./chip8 <rom_path>
 ```
 
 ### Command Line Options
@@ -78,6 +80,8 @@ make run ROM=./roms/tetris.ch8 LEGACY=--legacy
 ```bash
 # Play Tetris
 make run ROM=./roms/tetris.ch8
+
+./chip8 ./roms/tetris.ch8
 ```
 
 ## Controls
