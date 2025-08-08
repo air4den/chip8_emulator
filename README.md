@@ -2,7 +2,7 @@
 
 My C++ implementation of a CHIP-8 emulator using SFML for graphics, audio, and input handling. 
 
-!(./img/hero.png)
+![Chip 8 IBM ROM](./img/hero.png)
 
 ## What is CHIP-8?
 
