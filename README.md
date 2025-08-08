@@ -2,6 +2,8 @@
 
 My C++ implementation of a CHIP-8 emulator using SFML for graphics, audio, and input handling. 
 
+!(./img/hero.png)
+
 ## What is CHIP-8?
 
 [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8) is an interpreted programming language developed by Joseph Weisbecker in the mid-1970s. It was originally designed for the COSMAC VIP and Telmac 1800 microcomputers.The CHIP-8 virtual machine has:
